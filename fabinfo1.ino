@@ -1,25 +1,34 @@
-//========================================================================================
-// FabInfo demo firmware
-// Arduino Day 2018
-// JTL, Stephan Messlinger
-//========================================================================================
-// Hardware: Wemos D1 mini (ESP-8266EX), 8 x (8x8) LED Matrix 8 (MAX7221 driver)
-// Pin usage:
-//   XXX todo XXX
-//========================================================================================
-// Board: Wemos D1 Mini
-// (Add http://arduino.esp8266.com/stable/package_esp8266com_index.json to your moard manager path)
-//========================================================================================
-// Libraries:
-//   Adafruit_GFX
-//   Max72xxPanel (XXX Link? XXX)
-//========================================================================================
-// Notes for programming the ESP8266:
-//   There is a cooperative task scheduler running on this device. The user's loop() function
-//   is only one among other task. In order to give execution time to other tasks, return from
-//   the loop() function, or call delay(), eg. delay(0). If the user task blocks for too long,
-//   network connections may not work properly.
-//========================================================================================
+/*
+========================================================================================
+  FabInfo demo firmware
+  Arduino Day 2018
+  JTL, Stephan Messlinger
+========================================================================================
+  Hardware: 
+     * Wemos D1 mini (ESP-8266EX), 
+     * 8 modules 8x8 LED Matrix (MAX7221 driver)
+     * LDR (photo-resistor) with 10k pull-down
+
+ Pin map:
+   D7 (MOSI)  DIN-MAX7221
+   D4         CS -MAX7221
+   D5 (CLK)   CLK-MAX7221
+   A0         LDR
+========================================================================================
+ Board: Wemos D1 Mini
+ (Add http://arduino.esp8266.com/stable/package_esp8266com_index.json to your moard manager path)
+========================================================================================
+ Libraries:
+   Adafruit_GFX
+   Max72xxPanel (XXX Link? XXX)
+========================================================================================
+ Notes for programming the ESP8266:
+   There is a cooperative task scheduler running on this device. The user's loop() function
+   is only one among other task. In order to give execution time to other tasks, return from
+   the loop() function, or call delay(), eg. delay(0). If the user task blocks for too long,
+   network connections may not work properly.
+========================================================================================
+*/
 
 #include <SPI.h>
 #include <Adafruit_GFX.h>
@@ -44,23 +53,69 @@
 const String DEFAULT_TEXT = "Arduino Day 2018 - FabLab Bayreuth";  // Initial display text
 
 //========================================================================================
+// Pin configuration
+
+#define PIN_LED_CS    2   // Chip select pin for led matrix
+#define PIN_LED_DOUT  7   // Data out (SPI MOSI) for led matrix (for reference only, will be used automatically)  
+#define PIN_LED_CLK   5   // Clock out (SPI CLK) for led matrix (for reference only, will be used automatically)
+#define PIN_LDR       A0  // LDR analog voltage
+
+//========================================================================================
 
 // WiFi SSID and Password
 unsigned long ulReqcount;
 unsigned long ulReconncount;
 int x = 0;
 WiFiServer server(HTTP_PORT);
-String outtext = DEFAULT_TEXT;
 
-// LED matrix Settings
-int pinCS = 2; // Attach CS to this pin, DIN to MOSI and CLK to SCK (cf http://arduino.cc/en/Reference/SPI )
-int numberOfHorizontalDisplays = 8;
-int numberOfVerticalDisplays = 1;
+
+//========================================================================================
+// LED Matrix (8 modules a 8x8 LED)
+
+#define LED_MATRIX_N_HOR   8   // Number of horizontal LED modules
+#define LED_MATRIX_N_VERT  1   // Number of vertical LED modules
+
+Max72xxPanel led_matrix( PIN_LED_CS, LED_MATRIX_N_HOR, LED_MATRIX_N_VERT );
+
+String outtext = DEFAULT_TEXT;
 int wait = 40; // In milliseconds
 int spacer = 1;
 int width = 5 + spacer; // The font width is 5 pixels
-Max72xxPanel matrix = Max72xxPanel(pinCS, numberOfHorizontalDisplays, numberOfVerticalDisplays);
 
+
+void led_init(void)
+{
+  led_matrix.setIntensity(15); // Use a value between 0 and 15 for brightness
+  for (int i=0; i<LED_MATRIX_N_HOR; i++)  {
+    led_matrix.setRotation(i, 1);
+  }
+}
+
+
+void led_scrolltext(String scrt, int clk) {
+  for ( int i = 0 ; i < width * scrt.length() + led_matrix.width() - spacer; i++ ) {
+    int letter = i / width;
+    int x = (led_matrix.width() - 1) - i % width;
+    int y = (led_matrix.height() - 8) / 2; // center the text vertically
+    while ( x + width - spacer >= 0 && letter >= 0 ) {
+      if ( letter < scrt.length() ) {
+        led_matrix.drawChar(x, y, scrt[letter], HIGH, LOW, 1);
+      }
+      letter--;
+      x -= width;
+    }
+    led_matrix.write(); // Send bitmap to display
+    delay(clk);
+  }
+}
+
+
+void led_clear(void)
+{
+    led_matrix.fillScreen(0);
+}
+
+//========================================================================================
 
 void urldecode(String &input) {
   input.replace("+", " ");
@@ -97,22 +152,7 @@ void urldecode(String &input) {
 
 
 
-void scrolltext(String scrt, int clk) {
-  for ( int i = 0 ; i < width * scrt.length() + matrix.width() - spacer; i++ ) {
-    int letter = i / width;
-    int x = (matrix.width() - 1) - i % width;
-    int y = (matrix.height() - 8) / 2; // center the text vertically
-    while ( x + width - spacer >= 0 && letter >= 0 ) {
-      if ( letter < scrt.length() ) {
-        matrix.drawChar(x, y, scrt[letter], HIGH, LOW, 1);
-      }
-      letter--;
-      x -= width;
-    }
-    matrix.write(); // Send bitmap to display
-    delay(clk);
-  }
-}
+
 
 
 
@@ -121,7 +161,7 @@ void WiFiStart()
   ulReconncount++;
 
   // Connect to WiFi network
-  scrolltext("Connect to: " + (String)WIFI_SSID, 30);
+  led_scrolltext("Connect to: " + (String)WIFI_SSID, 30);
   WiFi.begin( WIFI_SSID, WIFI_PASS );
 
   while (WiFi.status() != WL_CONNECTED) {
@@ -132,28 +172,13 @@ void WiFiStart()
 
   // Print the IP address
   IPAddress myAddr = WiFi.localIP();
-  String ipAddress = (String)myAddr[0] + (String)"." + (String)myAddr[1] + (String)"." +
-                     (String)myAddr[2] + (String)"." + (String)myAddr[3];
-
   Serial.println(myAddr);
-  //scrolltext("http://"+ ipAddress, 20);
-  scrolltext("http://" + myAddr, 20);  // Note: IPAddress type has an type-conversion operator to String
-
-  //   dtext = dtext + ipAddress;
+  led_scrolltext("http://" + myAddr, 20);  // Note: IPAddress type has an type-conversion operator to String
 }
 
 
 void setup() {
-  matrix.setIntensity(15); // Use a value between 0 and 15 for brightness
-  matrix.setRotation(0, 1);
-  matrix.setRotation(1, 1);
-  matrix.setRotation(2, 1);
-  matrix.setRotation(3, 1);
-  matrix.setRotation(4, 1);
-  matrix.setRotation(5, 1);
-  matrix.setRotation(6, 1);
-  matrix.setRotation(7, 1);
-
+  led_init();
   ulReqcount = 0;
   ulReconncount = 0;
 
@@ -170,7 +195,7 @@ void setup() {
 
 
 void loop() {
-  matrix.fillScreen(LOW);
+  led_clear();
   //  scrolltext(outtext,20);
   /*
     x=x+1;
@@ -292,5 +317,5 @@ void loop() {
   client.stop();
 
   // Show text once
-  scrolltext(outtext, 20);
+  led_scrolltext(outtext, 20);
 }
