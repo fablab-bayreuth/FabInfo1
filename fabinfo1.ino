@@ -30,15 +30,9 @@
 ========================================================================================
 */
 
-#include <SPI.h>
-#include <Adafruit_GFX.h>
-#include <Max72xxPanel.h>
-
-//#include "LedMatrix.h"
-#include <ESP8266WiFi.h>
-
 //========================================================================================
-// Configuration
+// User configuration
+//========================================================================================
 
 #define  WIFI_ENABLE   1                  // Turn on Wifi (Station mode) and HTTP Server
 //#define  WIFI_SSID  "FabLab_Guest"  // Wifi Accesspoint SSID to connect to
@@ -54,6 +48,7 @@ const String DEFAULT_TEXT = "Arduino Day 2018 - FabLab Bayreuth";  // Initial di
 
 //========================================================================================
 // Pin configuration
+//========================================================================================
 
 #define PIN_LED_CS    2   // Chip select pin for led matrix
 #define PIN_LED_DOUT  7   // Data out (SPI MOSI) for led matrix (for reference only, will be used automatically)  
@@ -62,15 +57,16 @@ const String DEFAULT_TEXT = "Arduino Day 2018 - FabLab Bayreuth";  // Initial di
 
 //========================================================================================
 
-// WiFi SSID and Password
-unsigned long ulReqcount;
-unsigned long ulReconncount;
-int x = 0;
-WiFiServer server(HTTP_PORT);
+#include <SPI.h>
+#include <Adafruit_GFX.h>
+#include <Max72xxPanel.h>
 
+//#include "LedMatrix.h"
+#include <ESP8266WiFi.h>
 
 //========================================================================================
-// LED Matrix (8 modules a 8x8 LED)
+// LED matrix display (8 modules a 8x8 LED)
+//========================================================================================
 
 #define LED_MATRIX_N_HOR   8   // Number of horizontal LED modules
 #define LED_MATRIX_N_VERT  1   // Number of vertical LED modules
@@ -82,8 +78,9 @@ int wait = 40; // In milliseconds
 int spacer = 1;
 int width = 5 + spacer; // The font width is 5 pixels
 
+//========================================================================================
 
-void led_init(void)
+void display_init(void)
 {
   led_matrix.setIntensity(15); // Use a value between 0 and 15 for brightness
   for (int i=0; i<LED_MATRIX_N_HOR; i++)  {
@@ -91,8 +88,9 @@ void led_init(void)
   }
 }
 
+//========================================================================================
 
-void led_scrolltext(String scrt, int clk) {
+void display_scrolltext(String scrt, int clk) {
   for ( int i = 0 ; i < width * scrt.length() + led_matrix.width() - spacer; i++ ) {
     int letter = i / width;
     int x = (led_matrix.width() - 1) - i % width;
@@ -109,11 +107,22 @@ void led_scrolltext(String scrt, int clk) {
   }
 }
 
+//========================================================================================
 
-void led_clear(void)
+void display_clear(void)
 {
     led_matrix.fillScreen(0);
 }
+
+//========================================================================================
+// WIFI
+//========================================================================================
+
+unsigned long ulReqcount;
+unsigned long ulReconncount;
+//int x = 0;
+
+WiFiServer server(HTTP_PORT);
 
 //========================================================================================
 
@@ -150,71 +159,57 @@ void urldecode(String &input) {
   input.replace((char)0xDF, (char)0xE1);
 }
 
+//========================================================================================
 
+void wifi_init(void)
+{
+  ulReqcount = 0;
+  ulReconncount = 0;
+  WiFi.mode(WIFI_STA);
+  wifi_start();
+}
 
+//========================================================================================
 
-
-
-
-void WiFiStart()
+void wifi_start()
 {
   ulReconncount++;
 
   // Connect to WiFi network
-  led_scrolltext("Connect to: " + (String)WIFI_SSID, 30);
+  Serial.println("WIFI Connect to: " + (String)WIFI_SSID);
+  display_scrolltext("Connect to: " + (String)WIFI_SSID, 30);
   WiFi.begin( WIFI_SSID, WIFI_PASS );
 
+  // Wait until connected
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
+    Serial.print('.');
   }
+  
   // Start the server
   server.begin();
 
   // Print the IP address
   IPAddress myAddr = WiFi.localIP();
-  Serial.println(myAddr);
-  led_scrolltext("http://" + myAddr, 20);  // Note: IPAddress type has an type-conversion operator to String
+  Serial.println("IP: " + myAddr);
+  display_scrolltext("http://" + myAddr, 20);  // Note: IPAddress class has a type-conversion operator to String
 }
 
+//========================================================================================
 
-void setup() {
-  led_init();
-  ulReqcount = 0;
-  ulReconncount = 0;
-
-  Serial.begin(19200);
-  //Serial.setDebugOutput(1);
-  Serial.println();
-  Serial.println("Hello, World!");
-
-  WiFi.mode(WIFI_STA);
-  WiFiStart();
-}
-
-
-
-
-void loop() {
-  led_clear();
-  //  scrolltext(outtext,20);
-  /*
-    x=x+1;
-    if (x == 1) {
-       scrolltext(dtext,30);
-    }
-  */
-  // check if WLAN is connected
-  if (WiFi.status() != WL_CONNECTED)
-  {
-    WiFiStart();
+void wifi_task(void)
+{
+  // if WLAN is not connected, start connection
+  if (WiFi.status() != WL_CONNECTED)  {
+    wifi_start();
   }
 
-  // Check if a client has connected
+  // Check if a client has connected to our server
   WiFiClient client = server.available();
-  if (!client)
-  {
+  if (!client)  {
     return;
   }
+  
   // Wait until the client sends some data
   // A new client?
   unsigned long ultimeout = millis() + 250;
@@ -317,5 +312,43 @@ void loop() {
   client.stop();
 
   // Show text once
-  led_scrolltext(outtext, 20);
+  display_scrolltext(outtext, 20);
 }
+
+
+//========================================================================================
+
+void serial_init(void)
+{
+  Serial.begin(19200);
+  //Serial.setDebugOutput(1);
+  Serial.println();
+  Serial.println("Hello, World!"); 
+}
+
+//========================================================================================
+
+void setup() {
+  display_init();
+  serial_init();
+  wifi_init();
+}
+
+//========================================================================================
+
+void loop() {
+  display_clear();
+  //  scrolltext(outtext,20);
+  /*
+    x=x+1;
+    if (x == 1) {
+       scrolltext(dtext,30);
+    }
+  */
+  wifi_task();
+}
+
+//========================================================================================
+
+
+
