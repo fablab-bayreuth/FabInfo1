@@ -5,15 +5,15 @@
   JTL, Stephan Messlinger
 ========================================================================================
   Hardware: 
-     * Wemos D1 mini (ESP-8266EX), 
-     * 8 modules 8x8 LED Matrix (MAX7221 driver)
-     * LDR (photo-resistor) with 10k pull-down
+    * Wemos D1 mini (ESP-8266EX), 
+    * 8 modules 8x8 LED Matrix (MAX7221 driver)
+    * LDR (photo-resistor) with 10k pull-down
 
- Pin map:
-   D7 (MOSI)  DIN-MAX7221
-   D4         CS -MAX7221
-   D5 (CLK)   CLK-MAX7221
-   A0         LDR
+  Pin map:
+    D7 (MOSI)  DIN-MAX7221
+    D4         CS -MAX7221
+    D5 (CLK)   CLK-MAX7221
+    A0         LDR
 ========================================================================================
  Board: Wemos D1 Mini
  (Add http://arduino.esp8266.com/stable/package_esp8266com_index.json to your moard manager path)
@@ -91,6 +91,8 @@ void display_init(void)
 
 //========================================================================================
 
+// TODO: make this non-blocking
+
 void display_scrolltext(String scrt, int clk=40) {
   for ( int i = 0 ; i < width * scrt.length() + led_matrix.width() - spacer; i++ ) {
     int letter = i / width;
@@ -119,7 +121,7 @@ void display_clear(void)
 // WIFI
 //========================================================================================
 
-unsigned long ulReqcount;
+unsigned long ulReqcount;  // TODO: Do we need this?
 unsigned long ulReconncount;
 
 ESP8266WebServer http_server ( 8080 );
@@ -128,43 +130,47 @@ ESP8266WebServer http_server ( 8080 );
 
 void wifi_init(void)
 {
-  ulReqcount = 0;
-  ulReconncount = 0;
-
-  // Wifi network
-  WiFi.mode(WIFI_STA);
-  wifi_start();
-
-  // HTTP server
-  http_server.on ( "/", http_handler );
-  http_server.on ( "/favicon.ico", http_handler_favicon );
-  http_server.onNotFound ( http_handler );
-  http_server.begin();
+  if (WIFI_ENABLE) {
+    ulReqcount = 0;
+    ulReconncount = 0;
+  
+    // Wifi network
+    WiFi.mode(WIFI_STA);
+    wifi_start();
+  
+    // HTTP server
+    http_server.on ( "/", http_handler );
+    http_server.on ( "/favicon.ico", http_handler_favicon );
+    http_server.onNotFound ( http_handler );
+    http_server.begin();
+  }
 }
 
 //========================================================================================
 
 void wifi_start()
 {
-  ulReconncount++;
-
-  // Connect to WiFi network
-  Serial.print("WIFI Connect to: " + (String)WIFI_SSID);
-  display_scrolltext("Connect to: " + (String)WIFI_SSID, 30);
-  WiFi.begin( WIFI_SSID, WIFI_PASS );
-
-  // Wait until connected
-  // TODO: Make this non-blocking!
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print('.');
+  if (WIFI_ENABLE) {
+    ulReconncount++;
+  
+    // Connect to WiFi network
+    Serial.print("WIFI Connect to: " + (String)WIFI_SSID);
+    display_scrolltext("Connect to: " + (String)WIFI_SSID, 30);
+    WiFi.begin( WIFI_SSID, WIFI_PASS );
+  
+    // Wait until connected
+    // TODO: Make this non-blocking!
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(500);
+      Serial.print('.');
+    }
+    Serial.println();
+  
+    // Print the IP address
+    IPAddress myAddr = WiFi.localIP();
+    Serial.println("IP address: " + myAddr.toString());
+    display_scrolltext("http://" + myAddr.toString(), 20);
   }
-  Serial.println();
-
-  // Print the IP address
-  IPAddress myAddr = WiFi.localIP();
-  Serial.println("IP address: " + myAddr.toString());
-  display_scrolltext("http://" + myAddr.toString(), 20);
 }
 
 //========================================================================================
@@ -179,16 +185,15 @@ void http_handler_favicon(void)
 }
 
 //========================================================================================
-// html page handler
+// HTML page handler
 
-//static const char page[] = "<html>Hello, World</html>";
-static const char page[] = "<style> input[type=text]{ -webkit-appearance: none; -moz-appearance: none; display: block; margin: 0; width: 100%; height: 40px; line-height: 40px; font-size: 17px; border: 1px solid #bbb; }</style><form action=\"/\" method=\"GET\">Text der FabInfo-Anzeige!<input type=\"text\" name=\"text\"><input type=\"submit\" value=\"Text Anzeigen!\"><form>";
+#include "html.h"
 
 
 void http_handler(void)
 {
   http_print_request_info();
-  http_server.send( 200, "text/html", page );
+  http_server.send( 200, "text/html", html );
 
   // The http server conveniently provides all paramters parsed from the url
   String text( http_server.arg("text") );
@@ -230,13 +235,15 @@ void convert_codepage( String &str )
 
 void wifi_task(void)
 {
-  // if WIFI is not connected, try to restart connection
-  if (WiFi.status() != WL_CONNECTED)  {
-    wifi_start();
+  if (WIFI_ENABLE)  {
+    // if WIFI is not connected, try to restart connection
+    if (WiFi.status() != WL_CONNECTED)  {
+      wifi_start();
+    }
+  
+    // HTTP server
+    http_server.handleClient();
   }
-
-  // HTTP server
-  http_server.handleClient();
 }
 
 
@@ -262,16 +269,18 @@ void serial_init(void)
 
 void serial_task(void)
 {
-  while (Serial.available()) {
-    char c = Serial.read();
-    if ((c == '\r' || c == '\n') && serial_buf_put > 0)  {  // End command with linebreak
-      serial_eval( serial_buf );
-      serial_buf[0] = 0;   // reset buffer
-      serial_buf_put = 0;
-    }
-    else if (serial_buf_put < sizeof(serial_buf) - 1)  {  // Store input byte to our buffer
-      serial_buf[serial_buf_put++] = c;
-      serial_buf[serial_buf_put] = 0;
+  if (SERIAL_ENABLE) {
+    while (Serial.available()) {
+      char c = Serial.read();
+      if ((c == '\r' || c == '\n') && serial_buf_put > 0)  {  // End command with linebreak
+        serial_eval( serial_buf );
+        serial_buf[0] = 0;   // reset buffer
+        serial_buf_put = 0;
+      }
+      else if (serial_buf_put < sizeof(serial_buf) - 1)  {  // Store input byte to our buffer
+        serial_buf[serial_buf_put++] = c;
+        serial_buf[serial_buf_put] = 0;
+      }
     }
   }
 }
