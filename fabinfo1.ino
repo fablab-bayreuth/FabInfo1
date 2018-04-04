@@ -35,10 +35,8 @@
 //========================================================================================
 
 #define  WIFI_ENABLE   1                  // Turn on Wifi (Station mode) and HTTP Server
-//#define  WIFI_SSID  "FabLab_Guest"  // Wifi Accesspoint SSID to connect to
-//#define  WIFI_PASS  "Arduino2018"   // Password for Wifi Accesspoint
-#define  WIFI_SSID    "AndroidSM"
-#define  WIFI_PASS    "frogggnn"
+#define  WIFI_SSID  "FabLab_Guest"  // Wifi Accesspoint SSID to connect to
+#define  WIFI_PASS  "Arduino2018"   // Password for Wifi Accesspoint
 #define  HTTP_PORT 80                 // Public port for HTTP server 
 
 #define SERIAL_ENABLE  1                 // Turn on USB-serial connection
