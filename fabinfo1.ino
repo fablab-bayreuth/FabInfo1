@@ -90,7 +90,7 @@ void display_init(void)
 
 //========================================================================================
 
-void display_scrolltext(String scrt, int clk) {
+void display_scrolltext(String scrt, int clk=40) {
   for ( int i = 0 ; i < width * scrt.length() + led_matrix.width() - spacer; i++ ) {
     int letter = i / width;
     int x = (led_matrix.width() - 1) - i % width;
@@ -317,13 +317,47 @@ void wifi_task(void)
 
 
 //========================================================================================
+// Serial port
+//========================================================================================
 
+char serial_buf[1024];  // Serial input buffer
+size_t serial_buf_put;  // Serial input buffer put index
+
+//========================================================================================
 void serial_init(void)
 {
-  Serial.begin(19200);
-  //Serial.setDebugOutput(1);
-  Serial.println();
-  Serial.println("Hello, World!"); 
+  if (SERIAL_ENABLE) {
+    Serial.begin(19200);
+    //Serial.setDebugOutput(1);
+    Serial.println();
+    Serial.println("Hello, World!"); 
+  }
+}
+
+//========================================================================================
+
+void serial_task(void)
+{
+  while (Serial.available()) {
+    char c = Serial.read();
+    if ((c == '\r' || c == '\n') && serial_buf_put > 0)  {  // End command with linebreak
+      serial_eval( serial_buf );
+      serial_buf[0] = 0;   // reset buffer
+      serial_buf_put = 0;
+    }
+    else if (serial_buf_put < sizeof(serial_buf) - 1)  {  // Store input byte to our buffer
+      serial_buf[serial_buf_put++] = c;
+      serial_buf[serial_buf_put] = 0;
+    }
+  }
+  
+}
+
+//========================================================================================
+
+void serial_eval( const char * input )
+{
+  display_scrolltext( input );
 }
 
 //========================================================================================
@@ -339,13 +373,8 @@ void setup() {
 void loop() {
   display_clear();
   //  scrolltext(outtext,20);
-  /*
-    x=x+1;
-    if (x == 1) {
-       scrolltext(dtext,30);
-    }
-  */
   wifi_task();
+  serial_task();
 }
 
 //========================================================================================
