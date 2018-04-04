@@ -63,6 +63,7 @@ const String DEFAULT_TEXT = "Arduino Day 2018 - FabLab Bayreuth";  // Initial di
 
 //#include "LedMatrix.h"
 #include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
 
 //========================================================================================
 // LED matrix display (8 modules a 8x8 LED)
@@ -120,44 +121,8 @@ void display_clear(void)
 
 unsigned long ulReqcount;
 unsigned long ulReconncount;
-//int x = 0;
 
-WiFiServer server(HTTP_PORT);
-
-//========================================================================================
-
-void urldecode(String &input) {
-  input.replace("+", " ");
-  while (input.indexOf('%') > -1) {
-    int start = input.indexOf('%');
-    String src = input.substring(start, start + 3);
-    src.toUpperCase();
-    //   Serial.print("SRC:"+src);
-    unsigned char char1 = src.charAt(1);
-    unsigned char char2 = src.charAt(2);
-    //   Serial.print(char1); Serial.print(":"); Serial.print(char2); Serial.print(":");
-    // normalize A-F
-    if (char1 >= 'A') {
-      char1 = char1 - 7;
-    };
-    if (char2 >= 'A') {
-      char2 = char2 - 7;
-    };
-    unsigned char dest = (char1 - 48) * 16 - 48 + char2;
-    //   Serial.print(char1); Serial.print(":"); Serial.print(char2); Serial.print(":"); Serial.println(dest);
-    String destString = String((char)dest);
-    input.replace(src, destString);
-  }
-  // we have latin1 and want cp437
-  // transpose äöüÄÖÜß
-  input.replace((char)0xE4, (char)0x84);
-  input.replace((char)0xF6, (char)0x94);
-  input.replace((char)0xFC, (char)0x81);
-  input.replace((char)0xC4, (char)0x8E);
-  input.replace((char)0xD6, (char)0x99);
-  input.replace((char)0xDC, (char)0x9A);
-  input.replace((char)0xDF, (char)0xE1);
-}
+ESP8266WebServer http_server ( 8080 );
 
 //========================================================================================
 
@@ -165,8 +130,16 @@ void wifi_init(void)
 {
   ulReqcount = 0;
   ulReconncount = 0;
+
+  // Wifi network
   WiFi.mode(WIFI_STA);
   wifi_start();
+
+  // HTTP server
+  http_server.on ( "/", http_handler );
+  http_server.on ( "/favicon.ico", http_handler_favicon );
+  http_server.onNotFound ( http_handler );
+  http_server.begin();
 }
 
 //========================================================================================
@@ -176,143 +149,94 @@ void wifi_start()
   ulReconncount++;
 
   // Connect to WiFi network
-  Serial.println("WIFI Connect to: " + (String)WIFI_SSID);
+  Serial.print("WIFI Connect to: " + (String)WIFI_SSID);
   display_scrolltext("Connect to: " + (String)WIFI_SSID, 30);
   WiFi.begin( WIFI_SSID, WIFI_PASS );
 
   // Wait until connected
+  // TODO: Make this non-blocking!
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print('.');
   }
-  
-  // Start the server
-  server.begin();
+  Serial.println();
 
   // Print the IP address
   IPAddress myAddr = WiFi.localIP();
-  Serial.println("IP: " + myAddr);
-  display_scrolltext("http://" + myAddr, 20);  // Note: IPAddress class has a type-conversion operator to String
+  Serial.println("IP address: " + myAddr.toString());
+  display_scrolltext("http://" + myAddr.toString(), 20);
 }
+
+//========================================================================================
+// favicon handler
+
+#include "favicon.h"
+
+void http_handler_favicon(void)
+{
+  http_print_request_info();
+  http_server.send_P( 200, "image/png", favicon_png, sizeof(favicon_png) );
+}
+
+//========================================================================================
+// html page handler
+
+//static const char page[] = "<html>Hello, World</html>";
+static const char page[] = "<style> input[type=text]{ -webkit-appearance: none; -moz-appearance: none; display: block; margin: 0; width: 100%; height: 40px; line-height: 40px; font-size: 17px; border: 1px solid #bbb; }</style><form action=\"/\" method=\"GET\">Text der FabInfo-Anzeige!<input type=\"text\" name=\"text\"><input type=\"submit\" value=\"Text Anzeigen!\"><form>";
+
+
+void http_handler(void)
+{
+  http_print_request_info();
+  http_server.send( 200, "text/html", page );
+
+  // The http server conveniently provides all paramters parsed from the url
+  String text( http_server.arg("text") );
+
+  if (text.length() > 0)  {
+    Serial.print("text: ");
+    Serial.print( http_server.arg("text") );
+    Serial.println();
+    convert_codepage( text );
+    display_scrolltext( text, 20 );
+  }
+}
+
+//========================================================================================
+// Helper functions
+
+void http_print_request_info(void)
+{
+  Serial.print( http_server.client().remoteIP().toString());
+  Serial.print( " " + http_server.uri() );
+  Serial.println();
+}
+
+void convert_codepage( String &str )
+{
+  // we have latin1 and want cp437
+  // transpose äöüÄÖÜß
+  str.replace((char)0xE4, (char)0x84);
+  str.replace((char)0xF6, (char)0x94);
+  str.replace((char)0xFC, (char)0x81);
+  str.replace((char)0xC4, (char)0x8E);
+  str.replace((char)0xD6, (char)0x99);
+  str.replace((char)0xDC, (char)0x9A);
+  str.replace((char)0xDF, (char)0xE1);
+}
+
 
 //========================================================================================
 
 void wifi_task(void)
 {
-  // if WLAN is not connected, start connection
+  // if WIFI is not connected, try to restart connection
   if (WiFi.status() != WL_CONNECTED)  {
     wifi_start();
   }
 
-  // Check if a client has connected to our server
-  WiFiClient client = server.available();
-  if (!client)  {
-    return;
-  }
-  
-  // Wait until the client sends some data
-  // A new client?
-  unsigned long ultimeout = millis() + 250;
-  while (!client.available() && (millis() < ultimeout) )
-  {
-    delay(1);
-  }
-  if (millis() > ultimeout)
-  {
-    // Client connection time-out!
-    return;
-  }
-
-  // Read the first line of the request
-  String sRequest = client.readStringUntil('\r');
-  client.flush();
-
-  Serial.print("Client:");
-  Serial.println(client.remoteIP());
-
-  Serial.println("Request:");
-  Serial.println(sRequest);
-
-  // get path; end of path is either space or ?
-  // Syntax is e.g. GET /?pin=MOTOR1STOP HTTP/1.1
-  String sPath = "", sParam = "", sCmd = "";
-  String sGetstart = "GET ";
-  int iStart, iEndSpace, iEndQuest;
-  iStart = sRequest.indexOf(sGetstart);
-  if (iStart >= 0)
-  {
-    iStart += +sGetstart.length();
-    iEndSpace = sRequest.indexOf(" ", iStart);
-    iEndQuest = sRequest.indexOf("?", iStart);
-
-    // are there parameters?
-    if (iEndSpace > 0)
-    {
-      if (iEndQuest > 0)
-      {
-        // there are parameters
-        sPath  = sRequest.substring(iStart, iEndQuest);
-        sParam = sRequest.substring(iEndQuest, iEndSpace);
-        //Parameters!
-      }
-      else
-      {
-        // NO parameters
-        sPath  = sRequest.substring(iStart, iEndSpace);
-        // No Parameters
-      }
-    }
-  }
-
-  ///////////////////////////////////////////////////////////////////////////////
-  // output parameters to serial, you may connect e.g. an Arduino and react on it
-  ///////////////////////////////////////////////////////////////////////////////
-  if (sParam.length() > 0)
-  {
-    int iEqu = sParam.indexOf("=");
-    if (iEqu >= 0)
-    {
-      sCmd = sParam.substring(iEqu + 1, sParam.length());
-    }
-  }
-  if (sCmd.length() > 0) {
-    urldecode(sCmd);
-    outtext = sCmd;
-  }
-
-  ///////////////////////////
-  // format the html response
-  ///////////////////////////
-  String sResponse, sHeader;
-
-  sResponse = "<style> input[type=text]{ -webkit-appearance: none; -moz-appearance: none; display: block; margin: 0; width: 100%; height: 40px; line-height: 40px; font-size: 17px; border: 1px solid #bbb; }</style><form action=\"/\" method=\"GET\">Text der FabInfo-Anzeige!<input type=\"text\" name=\"text\"><input type=\"submit\" value=\"Text Anzeigen!\"><form>";
-
-  sHeader  = "HTTP/1.1 200 OK\r\n";
-  sHeader += "Content-Length: ";
-  sHeader += sResponse.length();
-  sHeader += "\r\n";
-  sHeader += "Content-Type: text/html\r\n";
-  sHeader += "Connection: close\r\n";
-  sHeader += "\r\n";
-
-  Serial.println("Response:");
-  Serial.println(sResponse);
-
-  client.print(sHeader);
-  client.print(sResponse);
-  client.flush();
-
-  // The client should close the TCP connection as told in the response header
-  // Wait for close, force close after a timeout of some seconds
-  uint32_t client_timeout = millis();
-  while (client.status() != CLOSED  &&
-         millis() - client_timeout < 2000) {
-    delay(1);
-  }
-  client.stop();
-
-  // Show text once
-  display_scrolltext(outtext, 20);
+  // HTTP server
+  http_server.handleClient();
 }
 
 
@@ -350,7 +274,6 @@ void serial_task(void)
       serial_buf[serial_buf_put] = 0;
     }
   }
-  
 }
 
 //========================================================================================
