@@ -233,15 +233,57 @@ void serial_task(void)
 
 void serial_eval( const char * input )
 {
-  Serial.println("Via serial: " + String(input));
-  display.scroll_text( input );
+  Serial.println(input);
+  Serial.println(eval_param_str( input, 0 ));
+  Serial.println(eval_param_str( input, 1 ));
+  Serial.println(eval_param_str( input, 2 ));
+
+  
+  if      (eval_cmd(input, "!scroll")) display.scroll_text( eval_param_str( input, 1 ) );
+  else if (eval_cmd(input, "!text"))   display.scroll_text( eval_param_str( input, 1 ) );
+  else if (eval_cmd(input, "!print"))  { display.clear(); display.print( eval_param_str( input, 1 ) ); display.apply();  }
+  else if (eval_cmd(input, "!stop"))   display.scroll_text_stop();
+  else if (eval_cmd(input, "!clear"))  display.clear();
+  else if (eval_cmd(input, "!int"))    display.setIntensity( eval_param_int( input, 1 ) );
+  else  display.scroll_text( input );
 }
+
+// Test if string starts with a given command
+bool eval_cmd( const char * str, const char * cmd )
+{
+   return (strncasecmp(str, cmd, strlen(cmd)) == 0);
+}
+
+// Gte the neth paramter from the command string, separated by ,;:= or blanks
+const char * eval_param_str( const char * str, int n )
+{
+  static const char delim[] = ",;:= \t";
+  static const char *lstr=0, *p=0;
+  static int ln=0, i=0;
+  if ( str != lstr || n < ln )  { p = str;  i = 0; }  // from start of string
+  p += strspn( p, delim );   // skip leading delim
+  for ( ; i<n; i++) {  // continue from last position
+    p += strcspn( p, delim );  // forward until delim
+    p += strspn( p, delim );   // skip delim
+  }
+  return *p ? p : "";
+}
+
+// Get the nth integer paramter from the command string
+// Returns 0 if the paramter is not present
+long eval_param_int( const char * str, int n )  
+{  
+  return atol( eval_param_str( str, n ) ); 
+}
+
 
 //========================================================================================
 //========================================================================================
 
 void setup() {
   display.clear();
+  display.print( "FabInfo" );
+  display.apply();
   serial_init();
   wifi_init();
 }

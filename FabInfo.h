@@ -71,7 +71,9 @@ class FabInfoDisplay : public Max72xxPanel
 
     void clear(void)
     {
+      scroll_text_stop();
       fillScreen(0);
+      setCursor(0,0);
       apply();
     }
 
