@@ -131,7 +131,7 @@ void wifi_task(void)
       IPAddress myAddr = WiFi.localIP();
       Serial.println("IP: " + myAddr.toString());
       display.scroll("http://" + myAddr.toString(), 30, 2);
-      display.scroll_wait();
+      //display.scroll_wait();
     }
     old_wifi_status = wifi_status;
 
@@ -162,16 +162,29 @@ void http_handler_favicon(void)
 void http_handler(void)
 {
   http_print_request_info();
-  http_server.send( 200, "text/html", html );
+  
+  // The http server conveniently provides all parameters parsed from the url
+  String text = http_server.arg("text");
+  long speed = http_server.arg("speed").toInt();
+  long repeat = http_server.arg("repeat").toInt();
+  if (speed <= 0)  speed = 50;
+  if (repeat < 0)  repeat = 0;
 
-  // The http server conveniently provides all paramters parsed from the url
-  String text( http_server.arg("text") );
+  // Resend the form filled with the received paramters
+  // At the first request, these will probably be empty
+  String html_filled(html);
+  html_filled.replace("%TEXT%", text);
+  html_filled.replace("%SPEED%", String(speed) );
+  html_filled.replace("%REPEAT%", String(repeat) );
+  http_server.send( 200, "text/html", html_filled );
 
   if (text.length() > 0)  {
     convert_latin1_to_437( text );
     //convert_utf8_to_437( text );
     Serial.println("Text via http: " + text);
-    display.scroll( text, 20 );
+    Serial.println("Speed: " + String(speed));
+    Serial.println("Repeat: " + String(repeat));
+    display.scroll( text, speed, repeat );
   }
 }
 
@@ -203,7 +216,7 @@ void serial_init(void)
 void setup() {
   display.clear();
   display.setIntensity( DEFAULT_INTENSITY );
-  display.print( DEFAULT_TEXT );
+  display.scroll( DEFAULT_TEXT );
   display.apply();
   serial_init();
   wifi_init();

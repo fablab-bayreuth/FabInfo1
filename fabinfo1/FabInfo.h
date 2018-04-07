@@ -163,7 +163,8 @@ class FabInfoDisplay : public Max72xxPanel
       strncpy( scr.new_text, text, sizeof(scr.new_text)-1 );
       scr.new_text[sizeof(scr.new_text)-1] = 0;
       scr.text_changed = 1;
-      scr.new_delay_ms = speed ? (1000 / speed) : 1;  // Speed in px per second
+      if (speed <= 0)  speed = 50;
+      scr.new_delay_ms = 1000 / speed;  // Speed in px per second
       scr.new_repeat = repeat;
       if (!scr.run)  {
         scr.start = 1;    // Start only if not running, since this would reset the scroll
