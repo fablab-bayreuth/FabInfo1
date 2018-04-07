@@ -18,7 +18,7 @@
 #define FABINFO_DISP_N_HOR     8   // Number of horizontal LED modules
 #define FABINFO_DISP_N_VERT    1   // Number of vertical LED modules
 
-#define FABINFO_DISP_DEF_INTENSITY  1   // Default display intensity (0..15)
+#define FABINFO_DISP_DEF_INTENSITY  7   // Default display intensity (0..15)
 #define FABINFO_FIX_ADA_CODPAGE  1      // Compensate bug in the Adafruit_GFX default codepage
 
 //========================================================================================
@@ -27,7 +27,38 @@
 #define FABINFO_PIN_DISP_CS    2   // Chip select pin for LED matrix driver
 #define FABINFO_PIN_DOUT       7   // Data out (SPI MOSI) for led matrix (for reference only, will be used automatically)  
 #define FABINFO_PIN_DOUT       5   // Clock out (SPI CLK) for led matrix (for reference only, will be used automatically)
+#define FABINFO_PIN_LDR_IN     A0  // LDR analog input
+#define FABINFO_PIN_LDR_VCC    D2  // LDR from here to LDR_IN. To be pulled high.
+#define FABINFO_PIN_LDR_GND    D3  // Reference resistor from here to LDR_IN. To be pulled low. 
 
+//========================================================================================
+// Fabinfo light dtecting sensor 
+//========================================================================================
+
+class FabInfoLDR
+{
+  public:
+    FabInfoLDR(void) 
+    {
+      init();
+    }
+
+    void init(void)
+    {
+      digitalWrite( FABINFO_PIN_LDR_GND, LOW );
+      digitalWrite( FABINFO_PIN_LDR_VCC, HIGH );
+      pinMode( FABINFO_PIN_LDR_GND, OUTPUT );
+      pinMode( FABINFO_PIN_LDR_VCC, OUTPUT );
+    }
+
+    uint16_t read(void)
+    {
+      return analogRead( FABINFO_PIN_LDR_IN );
+    }
+};
+
+//========================================================================================
+// FabInfo LED matrix display
 //========================================================================================
 
 // The Max72xxPanel class is a specialization of an Adafruit Adadfruit_GFX display.
@@ -63,7 +94,7 @@ class FabInfoDisplay : public Max72xxPanel
     
     void task(void)
     {
-      scroll_text_step();
+      scroll_step();
     }
 
     //-----------------------------------------------------------------------------------
@@ -71,7 +102,7 @@ class FabInfoDisplay : public Max72xxPanel
 
     void clear(void)
     {
-      scroll_text_stop();
+      scroll_stop();
       fillScreen(0);
       setCursor(0,0);
       apply();
@@ -108,7 +139,7 @@ class FabInfoDisplay : public Max72xxPanel
     //-------------------------------------------------------------------------------------
 
   protected:
-    struct Scroll {
+    struct Scr {
       char text[1024];        // currently scrolled text
       char new_text[1024];    // next text
       bool text_changed;
@@ -118,66 +149,66 @@ class FabInfoDisplay : public Max72xxPanel
       bool start;             // requests start of scroll
       uint32_t cnt;           // Overall counter, increased after scroll completes
       uint32_t new_delay_ms;  // delay in ms between pixel steps for next text
-      Scroll(void) : text_changed(0), new_repeat(0), run(0), start(0) { } 
-    } scroll;
+      Scr(void) : text_changed(0), new_repeat(0), run(0), start(0) { } 
+    } scr;
 
   public:
   
     //-------------------------------------------------------------------------------------
     // Set new scroll text. If not already running, scroll starts immediately.
     // If running, new scroll text starts after the current scroll finishes.
-    // The user must periodically call scroll_text_step() to keep the text scrolling.
-    void scroll_text( const char * text, uint16_t speed = 50, uint32_t repeat = 0 )
+    // The user must periodically call scroll_step() to keep the text scrolling.
+    void scroll( const char * text, uint16_t speed = 50, uint32_t repeat = 0 )
     {
-      strncpy( scroll.new_text, text, sizeof(scroll.new_text)-1 );
-      scroll.new_text[sizeof(scroll.new_text)-1] = 0;
-      scroll.text_changed = 1;
-      scroll.new_delay_ms = 1000 / speed;  // Speed in px per second
-      scroll.new_repeat = repeat;
-      if (!scroll.run)  {
-        scroll.start = 1;    // Start only if not running, since this would reset the scroll
-        scroll_text_step();  // Perform first scroll step immediately 
+      strncpy( scr.new_text, text, sizeof(scr.new_text)-1 );
+      scr.new_text[sizeof(scr.new_text)-1] = 0;
+      scr.text_changed = 1;
+      scr.new_delay_ms = speed ? (1000 / speed) : 1;  // Speed in px per second
+      scr.new_repeat = repeat;
+      if (!scr.run)  {
+        scr.start = 1;    // Start only if not running, since this would reset the scroll
+        scroll_step();  // Perform first scroll step immediately 
       }
     }
 
-    void scroll_text( String text, uint16_t speed = 50, uint32_t repeat = 0 )
+    void scroll( String text, uint16_t speed = 50, uint32_t repeat = 0 )
     {
-      scroll_text( text.c_str(), speed, repeat );
+      scroll( text.c_str(), speed, repeat );
     }
 
     //-------------------------------------------------------------------------------------
     // Start new scroll text immediately. If already running, the current scroll is aborted.
     
-    void scroll_text_start(void)  {  scroll.start = 1;  }
+    void scroll_start(void)  {  scr.start = 1;  }
 
     //-------------------------------------------------------------------------------------
     // Query if the scroll engine is running 
     
-    bool scroll_text_is_running(void) {  return scroll.run;  }
+    bool scroll_busy(void) {  return scr.run;  }
 
     //-------------------------------------------------------------------------------------
     // Stop scolling immediately
     
-    void scroll_text_stop(void)  {  scroll.run = 0;  }
+    void scroll_stop(void)  {  scr.run = 0;  }
 
     //-------------------------------------------------------------------------------------
-    // Wait for rep scroll repetition to complete, or until scroll stops (rep=0).
+    // Wait for rep scroll repetitions to complete, or until scroll stops (rep=0).
     // If scroll is set to infinite repetitions and rep==0, we only wait for one repetition.
     
-    void wait_scroll_text( uint32_t rep = 0 )
+    void scroll_wait( uint32_t rep = 0 )
     {
-      if (!scroll_text_is_running())  return;
-      if (rep == 0  &&  scroll.repeat == 0)  rep = 1;   // Do not block for inifinte repetitions
+      if (!scroll_busy())  return;
+      if (rep == 0  &&  scr.repeat == 0)  rep = 1;   // Do not block for inifinte repetitions
       
       if (rep == 0)  {  // Wait until scroll ends
-        while (scroll.repeat != 0  &&  scroll.run)  {
+        while (scr.repeat != 0  &&  scr.run)  {
           task();   // keep serving display tasks
           delay(0);  // keep serving OS tasks
         }
       }
       else {  // rep > 0: Wait for rep repetitions
-        uint32_t cnt_start = scroll.cnt;    // scroll.cnt is increased after every complete scroll
-        while (scroll.cnt - cnt_start < rep  &&  scroll.run)  {  
+        uint32_t cnt_start = scr.cnt;    // scr.cnt is increased after every complete scroll
+        while (scr.cnt - cnt_start < rep  &&  scr.run)  {  
           task();    // keep serving display tasks
           delay(0);  // keep serving OS tasks
         }
@@ -187,7 +218,7 @@ class FabInfoDisplay : public Max72xxPanel
     //-------------------------------------------------------------------------------------
     // Scroll text task. To be continuously called by the user.
     // The text speed is automatically kept independently of the call frequency.
-    void scroll_text_step( void )
+    void scroll_step( void )
     {
       // During scroll, we work with internal copies of the changeable paramters
       static uint32_t last_time = 0;  // Time of last step
@@ -195,21 +226,21 @@ class FabInfoDisplay : public Max72xxPanel
       static int pos_px = 0;          // current scroll position in px
       static size_t text_len = 0;   // string length of the current text
     
-      if (scroll.start)  {  // (re)start requested
-        scroll.run = 1;
-        scroll.start = 0;
-        delay_ms = scroll.new_delay_ms ? scroll.new_delay_ms : 50;
-        scroll.repeat = scroll.new_repeat;
+      if (scr.start)  {  // (re)start requested
+        scr.run = 1;
+        scr.start = 0;
+        delay_ms = scr.new_delay_ms ? scr.new_delay_ms : 50;
+        scr.repeat = scr.new_repeat;
         last_time = millis();
         pos_px = 0;
-        if (scroll.text_changed)  {
-          strncpy( scroll.text, scroll.new_text, sizeof(scroll.text)-1 );
-          scroll.text[sizeof(scroll.text)-1] = 0;
-          text_len = strlen( scroll.text );
-          scroll.text_changed = 0;
+        if (scr.text_changed)  {
+          strncpy( scr.text, scr.new_text, sizeof(scr.text)-1 );
+          scr.text[sizeof(scr.text)-1] = 0;
+          text_len = strlen( scr.text );
+          scr.text_changed = 0;
         }
       }
-      else if (!scroll.run) {
+      else if (!scr.run) {
         return;   // scroll inactive, nothing to do
       }
       else if (millis() - last_time < delay_ms)  {
@@ -236,7 +267,7 @@ class FabInfoDisplay : public Max72xxPanel
         // Draw all visible character starting with last visible (i.e. the rightmost)
         while ( x + glyph_width - glyph_space >= 0  &&  last_vis_char >= 0 ) {
           if ( last_vis_char < text_len )  {
-            const char c = scroll.text[last_vis_char];
+            const char c = scr.text[last_vis_char];
             Adafruit_GFX::drawChar( x, 0, c, 1, 0, 1 );
           }
           last_vis_char--;  // next character to the left
@@ -247,14 +278,14 @@ class FabInfoDisplay : public Max72xxPanel
         pos_px++;
       }
       else {  // Scroll complete
-        scroll.cnt++;
-        if (scroll.text_changed)     // new text available? 
-          scroll.start = 1;          // --> keep running and load new text at next iteration
-        else if ((scroll.repeat == 0) ||   // infinite repetitions?
-                  (--scroll.repeat > 0))   // or more repetitions?
+        scr.cnt++;
+        if (scr.text_changed)     // new text available? 
+          scr.start = 1;          // --> keep running and load new text at next iteration
+        else if ((scr.repeat == 0) ||   // infinite repetitions?
+                  (--scr.repeat > 0))   // or more repetitions?
           pos_px = 0;                   // --> keep running and restart scroll
         else
-          scroll.run = 0;       
+          scr.run = 0;       
       }
     }
 
