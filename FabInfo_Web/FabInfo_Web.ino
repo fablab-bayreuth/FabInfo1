@@ -42,7 +42,7 @@
 #define  HTTP_PORT 80               // Public port for HTTP server 
 
 #define DEFAULT_TEXT  "Arduino Day"  // Initial display text
-#define DEFAULT_INTENSITY  7        // Default display intensity
+#define DEFAULT_INTENSITY  15        // Default display intensity
 
 //========================================================================================
 
