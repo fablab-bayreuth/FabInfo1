@@ -97,22 +97,24 @@ void wifi_start()
 
     // Note: Only call Wifi.begin() once.
     //  Wifi Connections will be handled automatically in the background.
-    if (WiFi.status() == WL_IDLE_STATUS)  
+    if (WiFi.status() != WL_CONNECTED) {  
+      
       WiFi.begin( WIFI_SSID, WIFI_PASS );
 
-    Serial.print("Wifi connect to: " + String(WIFI_SSID));
-    display.scroll("Wifi connect to: " + String(WIFI_SSID));
-
-    uint32_t t0 = millis();
-    while (WiFi.status() != WL_CONNECTED) {   // Wait until connected
-      display.task();  // Update display
-      delay(0);        // Serve OS tasks
-      if (millis() - t0 >= 500) { 
-        Serial.print('.');
-        t0 += 500;
+      Serial.print("Wifi connect to: " + String(WIFI_SSID));
+      display.scroll("Wifi connect to: " + String(WIFI_SSID));
+  
+      uint32_t t0 = millis();
+      while (WiFi.status() != WL_CONNECTED) {   // Wait until connected
+        display.task();  // Update display
+        delay(0);        // Serve OS tasks
+        if (millis() - t0 >= 500) { 
+          Serial.print('.');
+          t0 += 500;
+        }
       }
+      Serial.println();
     }
-    Serial.println();
 }
 
 //========================================================================================
